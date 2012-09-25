@@ -1,0 +1,261 @@
+#!/bin/bash
+
+#------------------------------------------------------------------------------
+# iptctl v1.0
+# iptables/ip6tables controller
+# (c)2012 Andy Smith <andy@m0vkg.org.uk>
+#------------------------------------------------------------------------------
+
+# This script is released under the terms of the 'BSD 3-Clause License', a copy
+# of which can be found at http://opensource.org/licenses/BSD-3-Clause
+
+# Version
+VERSION="1.0"
+
+# Location of rules
+RULES_DIR="/etc/netfilter"
+
+# Set options for echo
+ECHO="/bin/echo -e"
+
+# Debug function (called when -d is specified)
+debug() {
+  if [[ ${DEBUG} = 1 ]]; then
+    ${ECHO} "\033[32;1mDEBUG:\033[0m $1"
+  fi
+}
+
+# Set debug and dryrun to 0 by default
+DEBUG=0
+DRYRUN=0
+RC=0
+
+# Assume IPv4, could be set to IPv6 below
+IPVER=4
+IPTABLES_NAME=iptables
+RULES=rules.conf
+
+# Default to 'filter' table
+TABLE="filter"
+
+function show_help() {
+  ${ECHO} "$0 ${VERSION}"
+  ${ECHO} "iptables/ip6tables controller"
+  ${ECHO} "(c)2012 Andy Smith <andy@m0vkg.org.uk>"
+  ${ECHO} ""
+  ${ECHO} "OPTIONS"
+  ${ECHO} "  -4|-6                             IPv4/IPv6 mode"
+  ${ECHO} "  -d                                Turn on debug message"
+  ${ECHO} "  -f                                Turn on dry-run mode"
+  ${ECHO} "  -t <table>                        Table name (defaults to 'filter')"
+  ${ECHO} ""
+  ${ECHO} "COMMANDS"
+  ${ECHO} "  -r                                Restore (load) rules"
+  ${ECHO} "  -s                                Save rules"
+  ${ECHO} "  -e                                Edit rules"
+  ${ECHO} "  -l                                List rules and their counters"
+  ${ECHO} "  -p                                Dump rules to screen"
+  ${ECHO} "  -c                                Clear counters"
+  ${ECHO} ""
+  exit
+}
+
+# Pull out options from the commandline
+while getopts "hdf46rseplct:" OPT
+do
+  if [[ ${OPT} = "d" ]]; then
+    DEBUG=1
+    debug "Debugging turned on."
+  fi
+  if [[ ${OPT} = "h" ]]; then
+    show_help
+  fi
+  if [[ ${OPT} = "f" ]]; then
+    DRYRUN=1
+    debug "Dry run specified."
+  fi
+  if [[ ${OPT} = "4" ]]; then
+    debug "IPv4 specified."
+    IPVER=4
+    IPTABLES_NAME=iptables
+    RULES=rules.conf
+  fi
+  if [[ ${OPT} = "6" ]]; then
+    debug "IPv6 specified."
+    IPVER=6
+    IPTABLES_NAME=ip6tables
+    RULES=rules6.conf
+  fi
+  if [[ ${OPT} = "r" ]]; then
+    debug "Restore specified."
+    CMD="restore"
+  fi
+  if [[ ${OPT} = "s" ]]; then
+    debug "Save specified."
+    CMD="save"
+  fi
+  if [[ ${OPT} = "e" ]]; then
+    debug "Edit specified."
+    CMD="edit"
+  fi
+  if [[ ${OPT} = "p" ]]; then
+    debug "Print specified."
+    CMD="print_rules"
+  fi
+  if [[ ${OPT} = "l" ]]; then
+    debug "List specified."
+    CMD="list_rules"
+  fi
+  if [[ ${OPT} = "c" ]]; then
+    debug "Clear counters specified."
+    CMD="clear_counters"
+  fi
+  if [[ ${OPT} = "t" ]]; then
+    debug "Table specified (\033[33;1m${OPTARG}\033[0m)"
+    TABLE="${OPTARG}"
+  fi
+done
+
+# If no options have been given at all, then you're going home with nothing
+if [ -z ${CMD} ]; then
+  ${ECHO} "No command given - try -h for help."
+  exit 1
+fi
+
+# Get the editor from the environment
+if [[ ! -z ${EDITOR} ]]; then
+  debug "EDITOR found, is \033[33;1m${EDITOR}\033[0m."
+else
+  debug "EDITOR not found, setting to \033[33;1m/usr/bin/vi\033[0m."
+  EDITOR="/usr/bin/vi"
+fi
+
+# Commands called for iptables
+IPTABLES="/sbin/${IPTABLES_NAME}"
+IPTABLES_SAVE="/sbin/${IPTABLES_NAME}-save"
+IPTABLES_RESTORE="/sbin/${IPTABLES_NAME}-restore"
+
+# Function to call external programs
+function run_cmd() {
+
+  CMD_TO_RUN=$1
+  debug "run_cmd: \033[36;1m${CMD_TO_RUN}\033[0m"
+
+  # If dryrun is 0 (as by default), then do as we're told
+  if [[ ${DRYRUN} = 0 ]]; then
+    eval ${CMD_TO_RUN}
+  fi
+}
+
+# Restore (load) rules
+function restore() {
+
+  debug "Checking for existing rules in \033[33;1m${RULES_DIR}/${RULES}\033[0m..."
+  if [ -f ${RULES_DIR}/${RULES} ]; then
+    IPTABLES_CMD="${IPTABLES_RESTORE} -c <${RULES_DIR}/${RULES}"
+    debug "Calling \033[33;1m${IPTABLES_CMD}\033[0m to load rules..."
+    run_cmd "${IPTABLES_CMD}"
+    if [[ $? = 0 ]]; then
+      debug "Rules successfully loaded."
+    else
+      RC=$?
+      debug "Could not load rules - \033[33;1m${IPTABLES_RESTORE}\033[0m exited with value \033[33;1m${RC}\033[0m."
+    fi
+  else
+    debug "No rules found in \033[33;1m${RULES_DIR}/${RULES}^[[0m."
+    ${ECHO} "No rules found in \033[33;1m${RULES_DIR}/${RULES}^[[0m."
+  fi
+}
+
+# Save rules
+function save() {
+
+  debug "Checking for the existence of the rules directory..."
+  if [ -d ${RULES_DIR} ]; then
+    IPTABLES_CMD="${IPTABLES_SAVE} -c >${RULES_DIR}/${RULES}"
+    debug "Calling \033[33;1m${IPTABLES_CMD}\033[0m to save rules..."
+    run_cmd "${IPTABLES_CMD}"
+    if [[ $? = 0 ]]; then
+      debug "Rules successfully saved."
+    else
+      RC=$?
+      debug "Could not save rules - \033[33;1m${IPTABLES_SAVE}\033[0m exited with value \033[33;1m${RC}\033[0m."
+    fi
+  else
+    debug "\033[33;1m${RULES_DIR}\033[0m does not exist!"
+    ${ECHO} "\033[33;1m${RULES_DIR}\033[0m does not exist!"
+    RC=1
+  fi
+}
+
+# Edit rules
+# Calls save() first to try to preserve packet counts as much as possible, and to
+# account for any rules that have been added manually since the last save. Once
+# saved, calls restore() to load the new rules.
+function edit() {
+
+  debug "Calling \033[33;1msave()\033[0m..."
+  save
+  if [[ ${RC} = 0 ]]; then
+    debug "Calling \033[33;1m${EDITOR}\033[0m to edit \033[33;1m${RULES_DIR}/${RULES}\033[0m..."
+    run_cmd "${EDITOR} ${RULES_DIR}/${RULES}"
+    debug "Calling \033[33;1mrestore()\033[0m..."
+    restore
+  else
+    debug "Could not save rules to \033[33;1m${RULES_DIR}/${RULES}\033[0m."
+  fi
+}
+
+# Dump out the rules as they are in the rules file.
+function print_rules() {
+
+  IPTABLES_CMD="${IPTABLES} -t ${TABLE} -S"
+  debug "Printing list of rules with \033[33;1m${IPTABLES_CMD}\033[0m..."
+  run_cmd "${IPTABLES_CMD}"
+}
+
+# Formatted output of the rules (iptables --line-numbers -vnL)
+function list_rules() {
+  IPTABLES_CMD="${IPTABLES} -t ${TABLE} --line-numbers -vnL"
+  debug "Listing rules with \033[33;1m${IPTABLES_CMD}\033[0m..."
+  run_cmd "${IPTABLES_CMD}"
+}
+
+# Clear counters on all rules in the current table
+function clear_counters() {
+  IPTABLES_CMD="${IPTABLES} -t ${TABLE} -Z"
+  debug "Clearing counters with \033[33;1m${IPTABLES_CMD}\033[0m..."
+  run_cmd "${IPTABLES_CMD}"
+}
+
+# Main bit of logic
+case ${CMD} in
+  restore)
+    restore
+    if [[ $? = 0 ]]; then
+      ${ECHO} "Rules loaded from \033[32;1m${RULES_DIR}/${RULES}\033[0m."
+    else
+      ${ECHO} "Error loading rules from \033[32;1m${RULES_DIR}/${RULES}\033[0m."
+    fi
+    ;;
+  save)
+    if [[ $? = 0 ]]; then
+      ${ECHO} "Rules saved to \033[32;1m${RULES_DIR}/${RULES}\033[0m."
+    else
+      ${ECHO} "Error saving rules to \033[32;1m${RULES_DIR}/${RULES}\033[0m."
+    fi
+    save
+    ;;
+  edit)
+    edit
+    ;;
+  print_rules)
+    print_rules
+    ;;
+  list_rules)
+    list_rules
+    ;;
+  clear_counters)
+    clear_counters
+    ;;
+esac
