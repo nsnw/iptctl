@@ -5,8 +5,32 @@
 # iptables/ip6tables controller
 # (c)2012 Andy Smith <andy@m0vkg.org.uk>
 #------------------------------------------------------------------------------
+# LICENSE
+#
 # This script is released under the terms of the 'BSD 3-Clause License', a copy
 # of which can be found at http://opensource.org/licenses/BSD-3-Clause
+#------------------------------------------------------------------------------
+# USAGE
+#
+# iptctl can be invoked in a number of ways:-
+#  * Directly, as 'iptctl', with the options found by running 'iptctl -h'
+#  * As an init script, for example '/etc/init.d/iptables start'
+#  * As an rc script, for example '/etc/rc2.d/S99iptables'
+#
+# To use the second and third methods, just create a symlink to where iptctl
+# is installed from the /etc/init.d or one of the /etc/rcN.d directories.
+# This will only work if the symlink name matches one of the following:-
+#  * /etc/init.d/iptables
+#  * /etc/init.d/ip6tables
+#  * /etc/rcN.d/SNNiptables
+#  * /etc/rcN.d/KNNiptables
+#  * /etc/rcN.d/SNNip6tables
+#  * /etc/rcN.d/KNNip6tables
+# ...where N is a digit.
+#
+# If 'ip6tables' is used in the symlink name, '-6' is assumed. For symlinks in
+# /etc/rcN.d, no options are allowed (or supported, at least), and 'start' or
+# 'stop' is implied depending whether SNNiptables or KNNiptables is used.
 #------------------------------------------------------------------------------
 
 # Version
@@ -68,6 +92,7 @@ function show_help() {
   ${ECHO} "  -r                                Restore (load) rules"
   ${ECHO} "  -s                                Save rules"
   ${ECHO} "  -e                                Edit rules"
+  ${ECHO} "  -x                                Delete all rules"
   ${ECHO} "  -l                                List rules and their counters"
   ${ECHO} "  -p                                Dump rules to screen"
   ${ECHO} "  -c                                Clear counters"
