@@ -5,9 +5,9 @@
 # iptables/ip6tables controller
 # (c)2012 Andy Smith <andy@m0vkg.org.uk>
 #------------------------------------------------------------------------------
-
 # This script is released under the terms of the 'BSD 3-Clause License', a copy
 # of which can be found at http://opensource.org/licenses/BSD-3-Clause
+#------------------------------------------------------------------------------
 
 # Version
 VERSION="1.0"
@@ -26,14 +26,29 @@ debug() {
 }
 
 # Set debug and dryrun to 0 by default
-DEBUG=0
+if [[ ${DEBUG} = 1 ]]; then
+  DEBUG=1
+else
+  DEBUG=0
+fi
 DRYRUN=0
 RC=0
 
-# Assume IPv4, could be set to IPv6 below
-IPVER=4
-IPTABLES_NAME=iptables
-RULES=rules.conf
+# Function to set the IP version we're working with
+function set_ver() {
+  VER=$1
+  if [[ ${VER} = "6" ]]; then
+    debug "IPv6 specified."
+    IPVER=6
+    IPTABLES_NAME=ip6tables
+    RULES=rules6.conf
+  else
+    debug "IPv4 specified."
+    IPVER=4
+    IPTABLES_NAME=iptables
+    RULES=rules.conf
+  fi
+}
 
 # Default to 'filter' table
 TABLE="filter"
@@ -61,7 +76,7 @@ function show_help() {
 }
 
 # Pull out options from the commandline
-while getopts "hdf46rseplct:" OPT
+while getopts "hdf46rseplcxt:" OPT
 do
   if [[ ${OPT} = "d" ]]; then
     DEBUG=1
@@ -75,16 +90,10 @@ do
     debug "Dry run specified."
   fi
   if [[ ${OPT} = "4" ]]; then
-    debug "IPv4 specified."
-    IPVER=4
-    IPTABLES_NAME=iptables
-    RULES=rules.conf
+    set_ver 4
   fi
   if [[ ${OPT} = "6" ]]; then
-    debug "IPv6 specified."
-    IPVER=6
-    IPTABLES_NAME=ip6tables
-    RULES=rules6.conf
+    set_ver 6
   fi
   if [[ ${OPT} = "r" ]]; then
     debug "Restore specified."
@@ -114,12 +123,57 @@ do
     debug "Table specified (\033[33;1m${OPTARG}\033[0m)"
     TABLE="${OPTARG}"
   fi
+  if [[ ${OPT} = "x" ]]; then
+    debug "Clear rules specified."
+    CMD="clear_rules"
+  fi
 done
+
+# rc-script compatability
+if [[ $0 = "/etc/init.d/iptables" ]] || [[ $0 = "/etc/init.d/ip6tables" ]]; then
+  debug "Called as \033[33;1m$0\033[0m."
+  if [[ $0 = "/etc/init.d/ip6tables" ]]; then
+    set_ver 6
+  fi
+  case $1 in
+    start|reload)
+      CMD="restore"
+      ;;
+    stop)
+      CMD="clear_rules"
+      ;;
+    save)
+      CMD="save"
+      ;;
+    *)
+      echo "Usage: $0 (start|reload|stop|save)"
+      exit 1
+      ;;
+  esac
+elif [[ $0 =~ /etc/rc[0-9].d/S[0-9][0-9]iptables ]] || [[ $0 =~ /etc/rc[0-9].d/S[0-9][0-9]ip6tables ]]; then
+  if [[ $0 =~ ip6tables ]]; then
+    set_ver 6
+  fi
+  debug "Called as \033[33;1m$0\033[0m."
+  CMD="restore"
+elif [[ $0 =~ /etc/rc[0-9].d/K[0-9][0-9]iptables ]] || [[ $0 =~ /etc/rc[0-9].d/K[0-9][0-9]ip6tables ]]; then
+  if [[ $0 =~ ip6tables ]]; then
+    set_ver 6
+  fi
+  debug "Called as \033[33;1m$0\033[0m."
+  CMD="clear_rules"
+  exit 1
+fi
 
 # If no options have been given at all, then you're going home with nothing
 if [ -z ${CMD} ]; then
   ${ECHO} "No command given - try -h for help."
   exit 1
+fi
+
+# If neither -4 or -6 have been specified, assume IPv4
+if [[ -z ${IPVER} ]]; then
+  set_ver 4
 fi
 
 # Get the editor from the environment
@@ -139,12 +193,14 @@ IPTABLES_RESTORE="/sbin/${IPTABLES_NAME}-restore"
 function run_cmd() {
 
   CMD_TO_RUN=$1
-  debug "run_cmd: \033[36;1m${CMD_TO_RUN}\033[0m"
 
   # If dryrun is 0 (as by default), then do as we're told
   if [[ ${DRYRUN} = 0 ]]; then
+    debug "\033[31;1mrun_cmd\033[0m: \033[36;1m${CMD_TO_RUN}\033[0m"
     eval ${CMD_TO_RUN}
-  fi
+  else
+    debug "\033[35;1mdry_run_cmd\033[0m: \033[36;1m${CMD_TO_RUN}\033[0m"
+  fi 
 }
 
 # Restore (load) rules
@@ -173,6 +229,13 @@ function save() {
   debug "Checking for the existence of the rules directory..."
   if [ -d ${RULES_DIR} ]; then
     IPTABLES_CMD="${IPTABLES_SAVE} -c >${RULES_DIR}/${RULES}"
+    debug "Backing up existing rules to \033[33;1m${RULES_DIR}/${RULES}\033[0m..."
+    if [[ -f ${RULES_DIR}/${RULES} ]]; then
+      debug "\033[33;1m${RULES_DIR}/${RULES}\033[0m found."
+      run_cmd "cp ${RULES_DIR}/${RULES} ${RULES_DIR}/${RULES}.bak"
+    else
+      debug "\033[33;1m${RULES_DIR}/${RULES}\033[0m not found, so not making a backing."
+    fi
     debug "Calling \033[33;1m${IPTABLES_CMD}\033[0m to save rules..."
     run_cmd "${IPTABLES_CMD}"
     if [[ $? = 0 ]]; then
@@ -228,6 +291,35 @@ function clear_counters() {
   run_cmd "${IPTABLES_CMD}"
 }
 
+# Clear all rules
+function clear_rules() {
+  if [[ ${IPVER} = "6" ]]; then
+    TABLE_NAMES="`cat /proc/net/ip6_tables_names`"
+  else
+    TABLE_NAMES="`cat /proc/net/ip_tables_names`"
+  fi
+
+  debug "Tables are: \033[33;1m${TABLE_NAMES}\033[0m."
+  for TABLE_NAME in ${TABLE_NAMES}; do
+    debug "Clearing table \033[33;1m${TABLE_NAME}\033[0m..."
+    BUILTIN_CHAINS="`${IPTABLES} -t ${TABLE_NAME} -nL | grep \"^Chain\" | grep -v \"references\" | cut -f2 -d\" \"`"
+    for BUILTIN_CHAIN in ${BUILTIN_CHAINS}; do
+      debug "Setting policy on built-in chain \033[33;1m${BUILTIN_CHAIN}\033[0m to \033[33;1mACCEPT\033[0m and flushing..."
+      run_cmd "${IPTABLES} -t ${TABLE_NAME} -P ${BUILTIN_CHAIN} ACCEPT"
+      run_cmd "${IPTABLES} -t ${TABLE_NAME} -F ${BUILTIN_CHAIN}"
+    done
+    USER_CHAINS="`${IPTABLES} -t ${TABLE_NAME} -nL | grep \"^Chain\" | grep \"references\" | cut -f2 -d\" \"`"
+    for USER_CHAIN in ${USER_CHAINS}; do
+      debug "Clearing user chain \033[33;1m${USER_CHAIN}\033[0m..."
+      run_cmd "${IPTABLES} -t ${TABLE_NAME} -F ${USER_CHAIN}"
+    done
+    for USER_CHAIN in ${USER_CHAINS}; do
+      debug "Deleting user chain \033[33;1m${USER_CHAIN}\033[0m..."
+      run_cmd "${IPTABLES} -t ${TABLE_NAME} -X ${USER_CHAIN}"
+    done
+  done
+}
+    
 # Main bit of logic
 case ${CMD} in
   restore)
@@ -239,12 +331,12 @@ case ${CMD} in
     fi
     ;;
   save)
+    save
     if [[ $? = 0 ]]; then
       ${ECHO} "Rules saved to \033[32;1m${RULES_DIR}/${RULES}\033[0m."
     else
       ${ECHO} "Error saving rules to \033[32;1m${RULES_DIR}/${RULES}\033[0m."
     fi
-    save
     ;;
   edit)
     edit
@@ -257,5 +349,14 @@ case ${CMD} in
     ;;
   clear_counters)
     clear_counters
+    ;;
+  clear_rules)
+    clear_rules
+    if [[ $? = 0 ]]; then
+      ${ECHO} "Rules cleared."
+      clear_counters
+    else
+      ${ECHO} "Error clearing rules."
+    fi
     ;;
 esac
