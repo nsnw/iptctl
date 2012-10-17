@@ -1,0 +1,8 @@
+# iptables - load iptables rules
+description "iptables rules load"
+
+start on net-device-up net-device-down
+
+script
+  /usr/bin/iptctl -4 -r
+end script

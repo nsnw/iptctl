@@ -1,0 +1,8 @@
+# ip6tables - load ip6tables rules
+description "ip6tables rules load"
+
+start on net-device-up net-device-down
+
+script
+  /usr/bin/iptctl -6 -r
+end script

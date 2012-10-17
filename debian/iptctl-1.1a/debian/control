@@ -1,0 +1,15 @@
+Source: iptctl
+Section: unknown
+Priority: extra
+Maintainer: Andy Smith <andy@m0vkg.org.uk>
+Build-Depends: debhelper (>= 8.0.0)
+Standards-Version: 3.9.3
+Homepage: https://github.com/m0vkg/iptctl
+Vcs-Git: git://github.com/m0vkg/iptctl.git
+Vcs-Browser: https://github.com/m0vkg/iptctl
+
+Package: iptctl
+Architecture: all
+Depends: iptables
+Description: Provides a simple way to load, unload, display and
+ manipulate iptables/ip6tables rules.

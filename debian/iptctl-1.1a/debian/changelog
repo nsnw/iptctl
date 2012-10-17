@@ -1,0 +1,5 @@
+iptctl (1.1a) unstable; urgency=low
+
+  * Initial packaged release, using v1.1.
+
+ -- Andy Smith <andy@m0vkg.org.uk>  Tue, 16 Oct 2012 21:54:04 -0700
