@@ -58,6 +58,13 @@ fi
 DRYRUN=0
 RC=0
 
+GREEN=`echo -e "\033[32;1m"`
+RED=`echo -e "\033[31;1m"`
+YELLOW=`echo -e "\033[33;1m"`
+CYAN=`echo -e "\033[36;1m"`
+B_BLUE=`echo -e "\033[44;1m"`
+CLEAR=`echo -e "\033[0m"`
+
 # Function to set the IP version we're working with
 function set_ver() {
   VER=$1
@@ -305,6 +312,13 @@ function print_rules() {
 # Formatted output of the rules (iptables --line-numbers -vnL)
 function list_rules() {
   IPTABLES_CMD="${IPTABLES} -t ${TABLE} --line-numbers -vnL"
+  IPTABLES_CMD="${IPTABLES_CMD} 
+    | sed -e 's/ ACCEPT\s\s/ ${GREEN}ACCEPT ${CLEAR} /g'
+    | sed -e 's/ REJECT\s\s/ ${RED}REJECT ${CLEAR} /g'
+    | sed -e 's/ DROP\s\s/ ${RED}DROP ${CLEAR} /g'
+    | sed -e 's/ LOG\s\s/ ${YELLOW}LOG ${CLEAR} /g'
+    | sed -e 's/\(\/\*.*\*\/\)/${CYAN}\1${CLEAR}/g'
+    | sed -e 's/\(^Chain.*\)/${B_BLUE}${YELLOW}\1${CLEAR}/g'"
   debug "Listing rules with \033[33;1m${IPTABLES_CMD}\033[0m..."
   run_cmd "${IPTABLES_CMD}"
 }
